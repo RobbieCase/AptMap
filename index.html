@@ -80,6 +80,11 @@
   .sort button{background:transparent;border:none;font-size:11px;font-weight:600;
     padding:5px 9px;color:var(--muted);letter-spacing:.04em;}
   .sort button.on{background:var(--ink);color:var(--paper)}
+  .filters{display:flex;gap:6px;flex-wrap:wrap;padding:10px 12px;border-bottom:1px solid var(--line-soft);flex:none}
+  .filters button{background:var(--card);border:1px solid var(--line);border-radius:999px;
+    font-size:11.5px;font-weight:600;padding:5px 11px;color:var(--muted);letter-spacing:.02em;transition:.12s;}
+  .filters button:hover{color:var(--ink)}
+  .filters button.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
   .list{overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:11px;flex:1;min-height:0}
 
   .card{background:var(--card);border:1px solid var(--line);border-radius:11px;
@@ -105,6 +110,17 @@
     padding:3px 8px;color:var(--ink-soft);}
   .chip.price{background:var(--spruce);color:#f3f1e9;border-color:var(--spruce-deep)}
   .chip.nopin{background:#fbeede;color:var(--marigold-deep);border-color:#f0d3a6}
+  .chip.status{cursor:pointer;border-style:dashed}
+  .chip.status:hover{filter:brightness(.97)}
+  .chip.st-requested{background:#fbeede;color:var(--marigold-deep);border-color:#f0d3a6;border-style:solid}
+  .chip.st-toured{background:#e3efe6;color:var(--green);border-color:#bcdcc4;border-style:solid}
+  .chip.st-veto{background:#f7e1dc;color:var(--danger);border-color:#e6b9af;border-style:solid}
+  .card.vetoed{opacity:.62}
+  .card.vetoed .card-name{text-decoration:line-through;text-decoration-color:var(--danger)}
+  .card.vetoed .card-thumb{filter:grayscale(.7)}
+  .card-notes{font-size:12.5px;color:var(--ink-soft);margin-top:9px;white-space:pre-wrap;
+    word-break:break-word;border-left:2px solid var(--line);padding-left:9px;}
+  .icon-btn.veto.on{background:var(--danger);color:#fff;border-color:var(--danger)}
   .card-actions{position:absolute;top:10px;right:10px;display:flex;gap:5px;opacity:0;transition:opacity .12s}
   .card:hover .card-actions,.card.active .card-actions{opacity:1}
   .icon-btn{width:27px;height:27px;border-radius:6px;border:1px solid var(--line);
@@ -186,6 +202,17 @@
   .field input:focus{border-color:var(--marigold);box-shadow:0 0 0 2px rgba(224,144,43,.25)}
   .field.mono input{font-family:'Space Mono',monospace}
   .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  .field textarea{width:100%;background:var(--card);border:1px solid var(--line);border-radius:7px;
+    padding:9px 11px;font-size:14px;color:var(--ink);outline:none;resize:vertical;font-family:inherit;line-height:1.45;}
+  .field textarea:focus{border-color:var(--marigold);box-shadow:0 0 0 2px rgba(224,144,43,.25)}
+  .seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--card)}
+  .seg button{flex:1;background:transparent;border:none;border-left:1px solid var(--line);
+    font-size:12.5px;font-weight:600;padding:9px 6px;color:var(--muted);transition:.12s;}
+  .seg button:first-child{border-left:none}
+  .seg button.on{background:var(--spruce);color:#f3f1e9}
+  .veto-row{display:flex;align-items:center;gap:9px;margin-bottom:13px;font-size:13.5px;color:var(--ink-soft);cursor:pointer;}
+  .veto-row input{width:17px;height:17px;accent-color:var(--danger);flex:none;margin:0}
+  .veto-row em{color:var(--muted);font-style:italic;font-size:12px}
   .modal-foot{padding:14px 18px;border-top:1px solid var(--line-soft);
     display:flex;gap:10px;justify-content:flex-end;background:var(--paper-2);}
   .btn-save{background:var(--marigold);color:#211606}
@@ -302,6 +329,13 @@
         <button data-sort="price-desc">$ ↓</button>
       </div>
     </div>
+    <div class="filters" id="filters">
+      <button data-filter="all" class="on">All</button>
+      <button data-filter="none">Not toured</button>
+      <button data-filter="requested">Tour requested</button>
+      <button data-filter="toured">Toured</button>
+      <button data-filter="vetoed">Vetoed</button>
+    </div>
     <div class="list" id="list"></div>
   </section>
   <section class="map-wrap"><div id="map"></div>
@@ -337,6 +371,15 @@
         <div class="field mono"><label for="fBaths">Baths</label><input id="fBaths" placeholder="1" /></div>
         <div class="field mono"><label for="fPrice">Price</label><input id="fPrice" placeholder="3200" /></div>
       </div>
+      <div class="field"><label>Tour status</label>
+        <div class="seg" id="fStatus">
+          <button type="button" data-status="none" class="on">Not toured</button>
+          <button type="button" data-status="requested">Tour requested</button>
+          <button type="button" data-status="toured">Toured</button>
+        </div></div>
+      <div class="field"><label for="fNotes">Notes</label>
+        <textarea id="fNotes" rows="3" placeholder="Thoughts, pros/cons, who's seen it…"></textarea></div>
+      <label class="veto-row"><input type="checkbox" id="fVeto" /><span>Veto this place <em>(strikes it out for everyone)</em></span></label>
       <div class="field"><label for="fUrl">Listing URL</label><input id="fUrl" placeholder="https://…" /></div>
       <div class="field"><label for="fImg">Photo URL (optional)</label><input id="fImg" placeholder="https://… image" /></div>
       <div class="field"><label for="fBy">Added by (optional)</label><input id="fBy" placeholder="your name" /></div>
@@ -422,6 +465,8 @@
   var listings = [];
   var boundaries = [];
   var sortMode = "added";
+  var filterMode = "all";
+  var STATUS_LABEL = { none:"Not toured", requested:"Tour requested", toured:"Toured" };
   var activeId = null, editingId = null, prefillData = null;
   var markers = {}, boundaryLayers = {}, didFit = false;
   var sb = null, rtChannel = null;
@@ -436,7 +481,8 @@
 "  id text primary key, map_id text, added bigint,\n"+
 "  name text, addr text, beds text, baths text, price text,\n"+
 "  url text, img text, added_by text,\n"+
-"  lat double precision, lng double precision\n"+
+"  lat double precision, lng double precision,\n"+
+"  status text default 'none', vetoed boolean default false, notes text\n"+
 ");\n"+
 "create table if not exists boundaries (\n"+
 "  id text primary key, map_id text, added bigint,\n"+
@@ -677,7 +723,7 @@
     iconSize:[30,30], iconAnchor:[15,30], popupAnchor:[0,-30] }); }
   function rebuildMarkers(){
     Object.keys(markers).forEach(function(id){ leaflet.removeLayer(markers[id]); }); markers={};
-    sorted().forEach(function(l,i){
+    visible().forEach(function(l,i){
       if(l.lat==null||l.lng==null) return;
       var m=L.marker([l.lat,l.lng],{ icon:pinIcon(i+1,l.id===activeId) });
       m.bindPopup('<div class="pop-name">'+esc(l.name||"Untitled")+'</div><div class="pop-meta">'+metaLine(l)+'</div>');
@@ -778,37 +824,56 @@
       a.sort(function(x,y){ var px=num(x.price),py=num(y.price); if(px==null)return 1; if(py==null)return -1;
         return sortMode==="price-asc"?px-py:py-px; });
     } else { a.sort(function(x,y){ return (y.added||0)-(x.added||0); }); } return a; }
+  function matchFilter(l){
+    if(filterMode==="all") return true;
+    if(filterMode==="vetoed") return !!l.vetoed;
+    if(l.vetoed) return false;
+    return (l.status||"none")===filterMode;
+  }
+  function visible(){ return sorted().filter(matchFilter); }
 
   function render(){
-    var listEl=document.getElementById("list"), countEl=document.getElementById("count"), ordered=sorted();
-    if(!ordered.length){ countEl.textContent="No listings yet"; }
-    else { var prices=listings.map(function(l){return num(l.price);}).filter(function(x){return x!=null;}); var range="";
+    var listEl=document.getElementById("list"), countEl=document.getElementById("count"), ordered=visible();
+    var label=filterMode==="all"?"logged":(filterMode==="vetoed"?"vetoed":(STATUS_LABEL[filterMode]||"shown").toLowerCase());
+    if(!listings.length){ countEl.textContent="No listings yet"; }
+    else { var prices=ordered.map(function(l){return num(l.price);}).filter(function(x){return x!=null;}); var range="";
       if(prices.length){ var lo=Math.min.apply(null,prices),hi=Math.max.apply(null,prices);
         range=" · $"+lo.toLocaleString()+(lo!==hi?"–$"+hi.toLocaleString():""); }
-      countEl.innerHTML="<em>"+ordered.length+"</em> logged"+range; }
+      countEl.innerHTML="<em>"+ordered.length+"</em> "+label+range; }
     if(!ordered.length){
-      listEl.innerHTML='<div class="empty"><div class="pin">📍</div><h3>Drop your first pin</h3>'+
-        '<p>Paste a listing link up top and AptMap pulls what it can — then you tidy up the rest. Everyone on the link sees it.</p></div>';
+      listEl.innerHTML = listings.length
+        ? '<div class="empty"><div class="pin">🔍</div><h3>Nothing here</h3><p>No listings match this filter. Try another tab above.</p></div>'
+        : '<div class="empty"><div class="pin">📍</div><h3>Drop your first pin</h3>'+
+          '<p>Paste a listing link up top and AptMap pulls what it can — then you tidy up the rest. Everyone on the link sees it.</p></div>';
       rebuildMarkers(); return; }
     listEl.innerHTML="";
     ordered.forEach(function(l,i){
-      var card=document.createElement("div"); card.className="card"+(l.id===activeId?" active":""); card.dataset.id=l.id;
+      var st=l.status||"none";
+      var card=document.createElement("div");
+      card.className="card"+(l.id===activeId?" active":"")+(l.vetoed?" vetoed":""); card.dataset.id=l.id;
       var thumb=l.img?'<img class="card-thumb" src="'+esc(l.img)+'" alt="" onerror="this.style.display=\'none\'" />'
                      :'<div class="card-thumb placeholder">no photo</div>';
       var chips='<div class="chips">';
+      if(l.vetoed)chips+='<span class="chip st-veto">⊘ Vetoed</span>';
+      chips+='<span class="chip status'+(st==="requested"?" st-requested":st==="toured"?" st-toured":"")+
+        '" data-cycle="1" title="Click to change tour status">'+STATUS_LABEL[st]+'</span>';
       if(l.beds)chips+='<span class="chip">'+esc(l.beds)+' bd</span>';
       if(l.baths)chips+='<span class="chip">'+esc(l.baths)+' ba</span>';
       if(l.price)chips+='<span class="chip price">$'+(num(l.price)?num(l.price).toLocaleString():esc(l.price))+'</span>';
       if(l.lat==null)chips+='<span class="chip nopin">no pin</span>';
       chips+='</div>';
       var link=l.url?'<a class="card-open" href="'+esc(l.url)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open listing ↗</a>':'';
+      var notes=l.notes?'<div class="card-notes">'+esc(l.notes)+'</div>':'';
       var by=l.added_by?'<div class="card-by">added by '+esc(l.added_by)+'</div>':'';
       card.innerHTML='<div class="card-num">'+(i+1)+'</div>'+
-        '<div class="card-actions"><button class="icon-btn edit" title="Edit">✎</button>'+
+        '<div class="card-actions"><button class="icon-btn veto'+(l.vetoed?" on":"")+'" title="'+(l.vetoed?"Remove veto":"Veto")+'">⊘</button>'+
+        '<button class="icon-btn edit" title="Edit">✎</button>'+
         '<button class="icon-btn del" title="Remove">✕</button></div>'+
         thumb+'<div class="card-name">'+esc(l.name||"Untitled listing")+'</div>'+
-        '<div class="card-addr">'+esc(l.addr||"")+'</div>'+chips+link+by;
+        '<div class="card-addr">'+esc(l.addr||"")+'</div>'+chips+notes+link+by;
       card.addEventListener("click",function(){ setActive(l.id,true); });
+      card.querySelector(".status").addEventListener("click",function(e){ e.stopPropagation(); cycleStatus(l.id); });
+      card.querySelector(".veto").addEventListener("click",function(e){ e.stopPropagation(); toggleVeto(l.id); });
       card.querySelector(".edit").addEventListener("click",function(e){ e.stopPropagation(); openModal(l.id); });
       card.querySelector(".del").addEventListener("click",function(e){ e.stopPropagation(); removeListing(l.id); });
       listEl.appendChild(card);
@@ -830,6 +895,25 @@
     removeLocal(id); if(activeId===id)activeId=null; render(); deleteRow(id);
   }
 
+  var STATUS_CYCLE = ["none","requested","toured"];
+  function cycleStatus(id){
+    var l=listings.find(function(x){return x.id===id;}); if(!l) return;
+    var next=STATUS_CYCLE[(STATUS_CYCLE.indexOf(l.status||"none")+1)%STATUS_CYCLE.length];
+    l.status=next; upsertLocal(l); render(); updateRow(id,{status:next});
+    toast(STATUS_LABEL[next]);
+  }
+  function toggleVeto(id){
+    var l=listings.find(function(x){return x.id===id;}); if(!l) return;
+    l.vetoed=!l.vetoed; upsertLocal(l); render(); updateRow(id,{vetoed:l.vetoed});
+    toast(l.vetoed?"Vetoed":"Veto removed");
+  }
+
+  // ---------- list filters ----------
+  document.getElementById("filters").addEventListener("click",function(e){
+    var b=e.target.closest("button"); if(!b)return; filterMode=b.dataset.filter;
+    Array.prototype.forEach.call(this.children,function(c){ c.classList.toggle("on",c===b); }); render();
+  });
+
   // ---------- modal ----------
   var scrim=document.getElementById("scrim");
   function openModal(id,prefill,note){
@@ -839,12 +923,23 @@
     document.getElementById("modalTitle").textContent=id?"Edit listing":"Log a listing";
     set("fName",l.name);set("fAddr",l.addr);set("fBeds",l.beds);set("fBaths",l.baths);
     set("fPrice",l.price);set("fUrl",l.url);set("fImg",l.img);set("fBy",l.added_by);
+    set("fNotes",l.notes);
+    document.getElementById("fVeto").checked = !!l.vetoed;
+    setSeg(l.status||"none");
     var n=document.getElementById("fetchNote");
     if(note){ n.style.display="flex"; n.className="fetch-note"+(note.warn?" warn":""); n.innerHTML=note.text; } else { n.style.display="none"; }
     scrim.classList.add("show"); setTimeout(function(){ document.getElementById("fName").focus(); },40);
   }
   function set(id,val){ document.getElementById(id).value=val||""; }
   function v(id){ return document.getElementById(id).value.trim(); }
+  function setSeg(status){
+    Array.prototype.forEach.call(document.getElementById("fStatus").children,function(b){
+      b.classList.toggle("on", b.dataset.status===status); });
+  }
+  function getSeg(){ var on=document.querySelector("#fStatus button.on"); return on?on.dataset.status:"none"; }
+  document.getElementById("fStatus").addEventListener("click",function(e){
+    var b=e.target.closest("button"); if(b) setSeg(b.dataset.status);
+  });
   function closeModal(){ scrim.classList.remove("show"); editingId=null; prefillData=null; }
   document.getElementById("modalClose").addEventListener("click",closeModal);
   document.getElementById("modalCancel").addEventListener("click",closeModal);
@@ -853,7 +948,8 @@
   document.getElementById("modalSave").addEventListener("click",function(){
     if(!currentMap){ toast("Open a map first"); return; }
     var data={ name:v("fName"),addr:v("fAddr"),beds:v("fBeds"),baths:v("fBaths"),
-      price:v("fPrice"),url:v("fUrl"),img:v("fImg"),added_by:v("fBy") };
+      price:v("fPrice"),url:v("fUrl"),img:v("fImg"),added_by:v("fBy"),
+      notes:v("fNotes"), status:getSeg(), vetoed:document.getElementById("fVeto").checked };
     if(!data.name && !data.addr){ alert("Add at least a name or an address."); return; }
     if(editingId){
       var l=listings.find(function(x){return x.id===editingId;});
