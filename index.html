@@ -125,6 +125,28 @@
 
   .map-wrap{position:relative;min-height:0}
   #map{position:absolute;inset:0;background:var(--paper-2)}
+  #map.drawing{cursor:crosshair}
+
+  /* boundary draw toolbar */
+  .draw-bar{display:none;position:absolute;top:12px;left:50%;transform:translateX(-50%);
+    z-index:1100;background:var(--spruce);color:#f3f1e9;border-radius:10px;
+    padding:8px 8px 8px 14px;box-shadow:0 6px 22px rgba(0,0,0,.3);
+    align-items:center;gap:9px;max-width:calc(100% - 24px);}
+  .draw-bar.show{display:flex}
+  .draw-hint{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .draw-hint b{font-family:'Space Mono',monospace;color:var(--marigold)}
+  .draw-bar .btn{padding:7px 12px;font-size:13px}
+  .draw-undo{background:rgba(255,255,255,.12);color:#f3f1e9;border:1px solid rgba(255,255,255,.22)}
+  .draw-undo:hover{background:rgba(255,255,255,.2)}
+  .draw-finish{background:var(--marigold);color:#211606}
+  .draw-finish:hover{filter:brightness(1.05)}
+  .draw-cancel{background:transparent;color:rgba(243,241,233,.75);border:1px solid rgba(255,255,255,.18)}
+  .draw-cancel:hover{color:#fff}
+  .bnd-pop b{display:block;margin-bottom:5px;font-size:13px}
+  .bnd-pop .bnd-rm{color:var(--danger);font-weight:600;font-size:12px;cursor:pointer;background:none;border:none;padding:0}
+  .bnd-pop .bnd-rm:hover{text-decoration:underline}
+  .bnd-pop .bnd-by{color:var(--muted);font-size:11px;font-style:italic;margin-top:3px}
+  @media (max-width:560px){ .draw-hint{display:none} }
   .leaflet-container{font-family:'Archivo',sans-serif}
   .pin{width:30px;height:30px;border-radius:50% 50% 50% 0;background:var(--marigold);
     transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.35);
@@ -265,6 +287,7 @@
     <button id="logBtn" class="btn btn-go">Log it</button>
     <button id="manualBtn" class="btn btn-ghost">Add</button>
   </div>
+  <button id="drawBtn" class="btn btn-ghost" title="Draw a boundary on the map">▰ Boundary</button>
   <button id="shareBtn" class="btn btn-ghost" title="Copy link to this map">Share</button>
   <div class="status connecting" id="status"><span class="dot"></span><span id="statusText">Connecting</span></div>
 </header>
@@ -281,7 +304,14 @@
     </div>
     <div class="list" id="list"></div>
   </section>
-  <section class="map-wrap"><div id="map"></div></section>
+  <section class="map-wrap"><div id="map"></div>
+    <div class="draw-bar" id="drawBar">
+      <span class="draw-hint">Click the map to trace a boundary · <b id="drawCount">0</b> points</span>
+      <button class="btn draw-undo" id="drawUndo">Undo</button>
+      <button class="btn draw-finish" id="drawFinish">Finish</button>
+      <button class="btn draw-cancel" id="drawCancel">Cancel</button>
+    </div>
+  </section>
 </div>
 
 <div class="view-toggle">
@@ -390,9 +420,10 @@
 
   var CORS = "https://api.allorigins.win/get?url=";
   var listings = [];
+  var boundaries = [];
   var sortMode = "added";
   var activeId = null, editingId = null, prefillData = null;
-  var markers = {}, didFit = false;
+  var markers = {}, boundaryLayers = {}, didFit = false;
   var sb = null, rtChannel = null;
   var currentMap = null;     // { id, name, pass_hash }
 
@@ -406,15 +437,23 @@
 "  name text, addr text, beds text, baths text, price text,\n"+
 "  url text, img text, added_by text,\n"+
 "  lat double precision, lng double precision\n"+
+");\n"+
+"create table if not exists boundaries (\n"+
+"  id text primary key, map_id text, added bigint,\n"+
+"  name text, color text, added_by text, points jsonb\n"+
 ");\n\n"+
 "alter table maps enable row level security;\n"+
-"alter table listings enable row level security;\n\n"+
+"alter table listings enable row level security;\n"+
+"alter table boundaries enable row level security;\n\n"+
 "create policy \"maps access\" on maps\n"+
 "  for all to anon using (true) with check (true);\n"+
 "create policy \"listings access\" on listings\n"+
+"  for all to anon using (true) with check (true);\n"+
+"create policy \"boundaries access\" on boundaries\n"+
 "  for all to anon using (true) with check (true);\n\n"+
 "alter publication supabase_realtime add table maps;\n"+
-"alter publication supabase_realtime add table listings;";
+"alter publication supabase_realtime add table listings;\n"+
+"alter publication supabase_realtime add table boundaries;";
   document.getElementById("setupSql").textContent = SQL;
 
   var CONFIGURED = SUPABASE_URL.indexOf("YOUR-PROJECT") === -1
@@ -530,12 +569,13 @@
   }
 
   function enterMap(map){
-    currentMap=map; activeId=null; didFit=false; listings=[]; render();
+    currentMap=map; activeId=null; didFit=false; listings=[]; boundaries=[]; cancelDraw(); render();
     addRecent(map.id, map.name);
     hideAll();
     document.getElementById("mapName").innerHTML='<span class="sep">▸</span> '+esc(map.name||"Untitled map");
     setStatus("connecting","Connecting");
     fetchListings(map.id).then(function(){ subscribeRealtime(map.id); });
+    fetchBoundaries(map.id);
     setTimeout(function(){ leaflet.invalidateSize(); },80);
   }
 
@@ -585,6 +625,22 @@
   function deleteRow(id){ return sb.from("listings").delete().eq("id",id).then(function(res){
     if(res.error) alert("Couldn't remove: "+res.error.message); }); }
 
+  function fetchBoundaries(mapId){
+    return sb.from("boundaries").select("*").eq("map_id",mapId).then(function(res){
+      if(res.error) return; boundaries=res.data||[]; renderBoundaries();
+    });
+  }
+  function insertBoundary(b){ return sb.from("boundaries").insert(b).then(function(res){
+    if(res.error){ alert("Couldn't save boundary: "+res.error.message); } }); }
+  function deleteBoundary(id){ return sb.from("boundaries").delete().eq("id",id).then(function(res){
+    if(res.error) alert("Couldn't remove boundary: "+res.error.message); }); }
+
+  function upsertBoundary(row){
+    var i=boundaries.findIndex(function(x){return x.id===row.id;});
+    if(i>=0) boundaries[i]=Object.assign({},boundaries[i],row); else boundaries.push(row);
+  }
+  function removeBoundaryLocal(id){ boundaries=boundaries.filter(function(x){return x.id!==id;}); }
+
   function subscribeRealtime(mapId){
     teardownRealtime();
     rtChannel = sb.channel("aptmap-"+mapId)
@@ -592,6 +648,11 @@
         if(payload.eventType==="DELETE"){ removeLocal(payload.old.id); }
         else { upsertLocal(payload.new); }
         render();
+      })
+      .on("postgres_changes", { event:"*", schema:"public", table:"boundaries", filter:"map_id=eq."+mapId }, function(payload){
+        if(payload.eventType==="DELETE"){ removeBoundaryLocal(payload.old.id); }
+        else { upsertBoundary(payload.new); }
+        renderBoundaries();
       })
       .subscribe(function(st){
         if(st==="SUBSCRIBED") setStatus("live","Live");
@@ -630,6 +691,84 @@
     else if(pts.length>1){ leaflet.fitBounds(pts,{ padding:[60,60], maxZoom:15 }); }
     else { leaflet.setView([34.02,-118.45],11); }
   }
+
+  // ---------- boundaries (shared polygons) ----------
+  var BND_COLOR = "#1E3A36"; // spruce
+  function renderBoundaries(){
+    Object.keys(boundaryLayers).forEach(function(id){ leaflet.removeLayer(boundaryLayers[id]); });
+    boundaryLayers={};
+    boundaries.forEach(function(b){
+      var pts=b.points; if(typeof pts==="string"){ try{ pts=JSON.parse(pts); }catch(e){ pts=null; } }
+      if(!pts || pts.length<3) return;
+      var color=b.color||BND_COLOR;
+      var poly=L.polygon(pts,{ color:color, weight:2.5, opacity:.9,
+        fillColor:color, fillOpacity:.12, className:"bnd" });
+      poly.bindPopup('<div class="bnd-pop"><b>'+esc(b.name||"Boundary")+'</b>'+
+        (b.added_by?'<div class="bnd-by">drawn by '+esc(b.added_by)+'</div>':'')+
+        '<button class="bnd-rm" data-id="'+esc(b.id)+'">Remove boundary</button></div>');
+      poly.addTo(leaflet); boundaryLayers[b.id]=poly;
+    });
+  }
+  document.addEventListener("click",function(e){
+    var rm=e.target.closest && e.target.closest(".bnd-rm"); if(!rm) return;
+    var id=rm.dataset.id;
+    if(!confirm("Remove this boundary for everyone on this map?")) return;
+    removeBoundaryLocal(id); renderBoundaries(); deleteBoundary(id); leaflet.closePopup();
+  });
+
+  // ---------- boundary drawing mode ----------
+  var drawing=false, drawPts=[], drawPreview=null, drawDots=[];
+  var drawBar=document.getElementById("drawBar");
+  function startDraw(){
+    if(!currentMap){ toast("Open a map first"); return; }
+    if(drawing){ cancelDraw(); return; }
+    drawing=true; drawPts=[];
+    document.getElementById("map").classList.add("drawing");
+    if(document.body.classList.contains("show-map")===false && window.innerWidth<=760){
+      document.getElementById("vtMap").click();
+    }
+    drawBar.classList.add("show"); updateDrawHint();
+    leaflet.on("click", onDrawClick);
+  }
+  function onDrawClick(e){ drawPts.push([e.latlng.lat, e.latlng.lng]); updateDrawPreview(); updateDrawHint(); }
+  function updateDrawHint(){ document.getElementById("drawCount").textContent=drawPts.length; }
+  function updateDrawPreview(){
+    if(drawPreview){ leaflet.removeLayer(drawPreview); drawPreview=null; }
+    drawDots.forEach(function(d){ leaflet.removeLayer(d); }); drawDots=[];
+    if(drawPts.length>=2){
+      drawPreview=L.polygon(drawPts,{ color:BND_COLOR, weight:2.5, opacity:.9, dashArray:"6 5",
+        fillColor:BND_COLOR, fillOpacity:.1 }).addTo(leaflet);
+    }
+    drawPts.forEach(function(p){
+      drawDots.push(L.circleMarker(p,{ radius:4, color:"#fff", weight:2,
+        fillColor:BND_COLOR, fillOpacity:1 }).addTo(leaflet));
+    });
+  }
+  function clearDrawPreview(){
+    if(drawPreview){ leaflet.removeLayer(drawPreview); drawPreview=null; }
+    drawDots.forEach(function(d){ leaflet.removeLayer(d); }); drawDots=[];
+  }
+  function cancelDraw(){
+    if(!drawing) return;
+    drawing=false; leaflet.off("click", onDrawClick); clearDrawPreview(); drawPts=[];
+    drawBar.classList.remove("show"); document.getElementById("map").classList.remove("drawing");
+  }
+  function finishDraw(){
+    if(drawPts.length<3){ toast("Add at least 3 points to close a boundary"); return; }
+    var name=(prompt("Name this boundary (optional):","")||"").trim();
+    var by=(prompt("Your name (optional):","")||"").trim();
+    var b={ id:"b"+uid(), map_id:currentMap.id, added:Date.now(),
+      name:name||"Boundary", color:BND_COLOR, added_by:by||null, points:drawPts.slice() };
+    cancelDraw();
+    upsertBoundary(b); renderBoundaries(); insertBoundary(b);
+    toast("Boundary saved — everyone on the link sees it");
+  }
+  document.getElementById("drawBtn").addEventListener("click", startDraw);
+  document.getElementById("drawFinish").addEventListener("click", finishDraw);
+  document.getElementById("drawCancel").addEventListener("click", cancelDraw);
+  document.getElementById("drawUndo").addEventListener("click", function(){
+    drawPts.pop(); updateDrawPreview(); updateDrawHint();
+  });
 
   function metaLine(l){ var p=[]; if(l.beds)p.push(l.beds+"bd"); if(l.baths)p.push(l.baths+"ba");
     if(l.price)p.push("$"+(num(l.price)?num(l.price).toLocaleString():l.price)); return p.join("  ·  ")||"—"; }
@@ -794,7 +933,7 @@
   });
   document.getElementById("urlInput").addEventListener("keydown",function(e){ if(e.key==="Enter")document.getElementById("logBtn").click(); });
   document.getElementById("manualBtn").addEventListener("click",function(){ openModal(null,{},null); });
-  document.addEventListener("keydown",function(e){ if(e.key==="Escape")closeModal(); });
+  document.addEventListener("keydown",function(e){ if(e.key==="Escape"){ if(drawing)cancelDraw(); closeModal(); } });
   document.getElementById("sort").addEventListener("click",function(e){
     var b=e.target.closest("button"); if(!b)return; sortMode=b.dataset.sort;
     Array.prototype.forEach.call(this.children,function(c){ c.classList.toggle("on",c===b); }); render();
